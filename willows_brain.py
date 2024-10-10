@@ -1,75 +1,57 @@
 import time
 import torch
-import pygame
 import numpy as np
 import gymnasium as gym
 import matplotlib.pyplot as plt
 
+from utils import print_state, config
 from IPython.display import clear_output, display
 
 class Brain:
     def __init__(self, shape):
-        self.state = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.8],
-                                   [0.0, 0.0, 0.0, 0.0, 0.0, 0.8],
-                                   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float16)
+        self.shape = shape
+        self.config = config
 
-        self.threshold = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                       [0.5, 0.5, 0.3, 0.3, 0.3, 0.3],  # minumum threshold is 1.0!!! this ensures the sumultanious pulsing works!
-                                       [0.0, 0.0, 0.0, 0.3, 0.0, 0.3],
-                                       [0.0, 0.0, 0.0, 0.3, 0.3, 0.3]], dtype=torch.float16)
-
-        self.connections_and_strength = [torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                                       [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],# right # existance = connection, value = weight 
-                                                       [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                                       [0.0, 0.0, 0.0, 0.4, 0.4, 0.0]], dtype=torch.float16),
-                                    torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                                  [0.1, 0.1, 0.1, 0.4, 0.4, 0.4],# left
-                                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float16),
-                                    torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],# up
-                                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.4],
-                                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.4]], dtype=torch.float16),
-                                    torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                                  [0.0, 0.0, 0.0, 0.4, 0.0, 0.0],# down
-                                                  [0.0, 0.0, 0.0, 0.4, 0.0, 0.0],
-                                                  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float16),]
+        self.state = torch.zeros(tuple(shape), dtype=torch.float16)
+        self.threshold = torch.rand(tuple(shape), dtype=torch.float16)
+        self.connections_and_strength = [torch.rand(tuple(shape), dtype=torch.float16) for i in range(4)]
+        for arr in self.connections_and_strength: arr[arr > 0.1] = 0.0    # randomly zero out some of the connections_and_strength
 
         self.history = [self.state, self.state]
 
-        self.config = {
-            "min_output": 0,
-            "max_output": 1.0,
-            'history_length': 2,
-            "p_spontaneous": 0.0001,
-            "learning_rate": 1, # should be an integer
-            "normalisation_val": 0.1,
-            "hebbian_learning_val": 0.01
-        }
-
-        # Enable interactive mode
-        plt.ion()
-        self.plot_height = 3
-        self.plot_width = 4
+        plt.ion()        # Enable interactive mode
+        self.plot_height, self.plot_width = 3, 4
         self.fig, self.axes = plt.subplots(self.plot_height, self.plot_width, figsize=(15, 7))
 
+    def step(self, input, reward):
+        self.reward_based_hebbian_learning_step(reward)
+        self.weight_decay()
+        self.threshold_decay()
+        self.synaptic_weight_normalisation()
+        self.spontaenous_spike()
 
-    def step(self, input):
-        self.state[:, 0] = torch.tensor(input)    # add the input to the first layer of the state
+        self.state[:, 0] = torch.tensor(input)  # add the input to the first layer of the state
 
         self.state = self.move_state(self.state, self.connections_and_strength, self.threshold)
         output = self.state[:, -1]    # the last layer of the state is the output
 
-        output = (output - self.config['min_output']) / (self.config['max_output'] - self.config['min_output'])        # scale the output to the range of the action space with min max normalization
-
-        # learning steps
-        # self.hebbian_learning_step()
-        # self.synaptic_weight_normalisation()
-
         return output
 
-    def hebbian_learning_step(self):
+    def threshold_decay(self):
+        self.threshold += self.config['threshold_decay_rate'] * self.threshold
+        self.threshold = torch.clamp(self.threshold, 0.0, 1.0)        # clamp the threshold at 0.        
+
+    def weight_decay(self):
+        for i in range(4):
+            self.connections_and_strength[i] -= self.config['strength_decay_rate'] * self.connections_and_strength[i]
+            self.connections_and_strength[i] = torch.clamp(self.connections_and_strength[i], 0.0, 1.0)       # clamp the connections_and_strength at 0.0     
+
+    def spontaenous_spike(self):
+        spontaneous_firing = torch.rand_like(self.state) < self.config['p_spontaneous']
+        self.state[spontaneous_firing] = self.threshold[spontaneous_firing]        #spike at the given connection with the given strength
+        self.state = torch.clamp(self.state, self.config['min_output'], self.config['max_output'])        # clip the state to the range of the max output
+
+    def reward_based_hebbian_learning_step(self, reward):
         if len(self.history) < 2: return
 
         prev_state = self.history[-2]
@@ -80,6 +62,7 @@ class Brain:
         state_left_new = torch.roll(current_state, shifts=1, dims=1)
         state_up_new = torch.roll(current_state, shifts=1, dims=0)
         state_down_new = torch.roll(current_state, shifts=-1, dims=0)
+
         state_right_new[:, -1] = 0.0
         state_left_new[:, 0] = 0.0
         state_up_new[0, :] = 0.0
@@ -90,32 +73,21 @@ class Brain:
         neuron_passed_up    = (prev_state != 0) & (state_up_new    != 0)
         neuron_passed_down  = (prev_state != 0) & (state_down_new  != 0)
 
-        self.connections_and_strength[0][neuron_passed_right] += self.config['hebbian_learning_val'] 
-        self.connections_and_strength[1][neuron_passed_left]  += self.config['hebbian_learning_val']  
-        self.connections_and_strength[2][neuron_passed_up]    += self.config['hebbian_learning_val']  
-        self.connections_and_strength[3][neuron_passed_down]  += self.config['hebbian_learning_val'] 
+        for direction, passes in enumerate([neuron_passed_right, neuron_passed_left, neuron_passed_up, neuron_passed_down]): 
+            self.connections_and_strength[direction][passes] += self.config['hebbian_learning_strength_val'] * reward
 
         # clip the range to min and max
-        self.connections_and_strength[0] = torch.clamp(self.connections_and_strength[0], self.config['min_output'], self.config['max_output'])
-        self.connections_and_strength[1] = torch.clamp(self.connections_and_strength[1], self.config['min_output'], self.config['max_output'])
-        self.connections_and_strength[2] = torch.clamp(self.connections_and_strength[2], self.config['min_output'], self.config['max_output'])
-        self.connections_and_strength[3] = torch.clamp(self.connections_and_strength[3], self.config['min_output'], self.config['max_output'])
+        for i in range(4): 
+            self.connections_and_strength[i] = torch.clamp(self.connections_and_strength[i], self.config['min_output'], self.config['max_output'])
+
+        # also reduce the threshold of the neurons that fired
+        for direction, passes in enumerate([neuron_passed_right, neuron_passed_left, neuron_passed_up, neuron_passed_down]): 
+            self.threshold[passes] -= self.config['hebbian_learning_thresh_val'] * reward
+        self.threshold = torch.clamp(self.threshold, 0.0, 1.0)        # clamp the threshold at 0.0
 
     def synaptic_weight_normalisation(self):
         for i in range(len(self.connections_and_strength)):
-            self.connections_and_strength[i] /= self.config["normalisation_val"]
-
-    def learn_step(self, input, target):
-        # we want to implement:
-        # 1. STDP: Spike-timing-dependent plasticity.
-        # 2. Homeostasis: Keep the average firing rate of the neurons at a certain level.
-        # 3. Inhibition: Inhibit neurons that are too active.
-        # 4. Spontaneous firing: Add a small probability of spontaneous firing.
-        # 5. Learning from input-target error.
-        # 6. Learning from world model prediction error. 
-
-        # hebbian learning:
-        pass
+            self.connections_and_strength[i] *= (self.config["normalisation_val"] / (self.shape[0] * self.shape[1]))
 
     def move_state(self, state, connections_and_strength, threshold):
         # apply thresholding
@@ -153,88 +125,39 @@ class Brain:
 
         return new_state
 
-    def print_state(self, state, time_step):
-        # Clear the previous plot
-        for i in range(self.plot_height):
-            for j in range(self.plot_width):
-                self.axes[i, j].cla()
-
-        # state
-        state_nump = state.numpy()
-        self.axes[0, 0].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-        self.axes[0, 0].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-        self.axes[0, 0].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-        for i in range(state_nump.shape[0]): 
-            for j in range(state_nump.shape[1]):  self.axes[0, 0].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-        self.axes[0, 0].set_title("State")
-
-        # previous state
-        state_nump = self.history[-2].numpy()
-        self.axes[0, 1].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-        self.axes[0, 1].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-        self.axes[0, 1].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-        for i in range(state_nump.shape[0]): 
-            for j in range(state_nump.shape[1]):  self.axes[0, 1].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-        self.axes[0, 1].set_title("State")
-
-
-        # plot the threshold
-        state_nump = self.threshold.numpy()
-        self.axes[1, 0].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-        self.axes[1, 0].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-        self.axes[1, 0].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-        for i in range(state_nump.shape[0]): 
-            for j in range(state_nump.shape[1]):  self.axes[1, 0].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-        self.axes[1, 0].set_title("Threshold")
-
-
-        # plot the weights
-        for p in range(4):
-            state_nump = self.connections_and_strength[p].numpy()
-            self.axes[2, p].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-            self.axes[2, p].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-            self.axes[2, p].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-            for i in range(state_nump.shape[0]): 
-                for j in range(state_nump.shape[1]):  self.axes[2, p].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-            self.axes[2, p].set_title("Weights")
-
-        # Hide the unused subplots
-        self.axes[0, 2].axis('off')  # Turn off the 3rd subplot
-        self.axes[0, 3].axis('off')  # Turn off the 3rd subplot
-        self.axes[1, 1].axis('off')  # Turn off the 4th subplot
-        self.axes[1, 2].axis('off')  # Turn off the 4th subplot
-        self.axes[1, 3].axis('off')  # Turn off the 4th subplot
-
-        # plt.title(f"time step: {time_step}")
-        plt.tight_layout()
-        plt.pause(0.01)
-
-env = gym.make("CartPole-v1", render_mode="human")
+# env = gym.make("CartPole-v1", render_mode="human")
+env = gym.make("Pendulum-v1", render_mode="rgb_array")
 observation, info = env.reset(seed=42)
+max_reward = -16.2736044
+reward = 0.0
 
 # Create the brain
 brain = Brain(shape=[4, 5])
 
-for time_step in range(1000):
+for time_step in range(10000):
     env.render()
 
     # observation is between -1 and 1, set it to between 0 and 1
-    observation = (observation + 1) / 2
+    observation[:2] = (observation[:2] + 1) / 2
+    observation[2]  = (observation[2] + 8) / 16
+    observation = np.append(observation, 0.0)
 
-    action = env.action_space.sample()
-    action = brain.step(observation)
+    # scale reward to between 0 and 1
+    reward = (reward - max_reward) / 100
 
-    # convert action to binary single value for the environment
-    action = round(action[0].item())
+    action = brain.step(observation, reward)
+    action = (action - brain.config['min_output']) / (brain.config['max_output'] - brain.config['min_output'])        # scale the output to the range of the action space with min max normalization
+    action = (action[:1] - 0.5) * 4
 
-    observation, reward, terminated, truncated, info = env.step(action)
+    observation, reward, terminated, truncated, info = env.step(np.array(action, dtype=np.float32))
 
-    brain.print_state(brain.state, time_step)
+    if time_step % 1000 == 0:
+        print_state(brain.state, brain.history, brain.threshold, brain.connections_and_strength, brain.plot_height, brain.plot_width, plt, brain.axes)
+        print(f"Time step: {time_step}, Reward: {reward}")
 
-    if terminated or truncated:
-        observation, info = env.reset()
+    if terminated or truncated:  observation, info = env.reset()
 
-    time.sleep(0.02)
+    # time.sleep(0.01)
 
 env.close()
 plt.ioff()
