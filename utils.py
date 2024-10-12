@@ -6,6 +6,7 @@ def plot_detailed(history_of_spikes, history_of_voltage, history_of_random_spike
 
     for i in range(len(axs)):
         axs[i].cla()
+    axs2.cla()
 
     history_of_spikes_ = np.array(history_of_spikes)
     history_of_voltage_ = np.array(history_of_voltage)
