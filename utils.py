@@ -1,108 +1,59 @@
+import numpy as np
+import matplotlib.pyplot as plt
 
-config = {
-    "min_output": 0,
-    "max_output": 1.0,
-    'history_length': 2,
-    "p_spontaneous": 0.1,
-    "learning_rate": 1, # should be an integer
-    "normalisation_val": 20.0,
-    "hebbian_learning_strength_val": 0.1,
-    "hebbian_learning_thresh_val": 0.1,
-    "strength_decay_rate": 0.001,
-    "threshold_decay_rate": 0.0001,
-}
+def plot_detailed(history_of_spikes, history_of_voltage, history_of_random_spikes, history_of_voltage_threshold, axs, num_neurons):
+    # plt in a subplot for each of the neurons as a graph of its state for the last 100 timesteps
 
-def print_state(state, history, threshold, connections_and_strength, plot_height, plot_width, plt, axes):
-    # Clear the previous plot
-    for i in range(plot_height):
-        for j in range(plot_width):
-            axes[i, j].cla()
+    for i in range(len(axs)):
+        axs[i].cla()
 
-    # state
-    state_nump = state.numpy()
-    axes[0, 0].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-    axes[0, 0].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-    axes[0, 0].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-    for i in range(state_nump.shape[0]): 
-        for j in range(state_nump.shape[1]):  axes[0, 0].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-    axes[0, 0].set_title("State")
+    history_of_spikes_ = np.array(history_of_spikes)
+    history_of_voltage_ = np.array(history_of_voltage)
+    history_of_random_spikes_ = np.array(history_of_random_spikes)
+    history_of_voltage_threshold_ = np.array(history_of_voltage_threshold)
 
-    # previous state
-    state_nump = history[-2].numpy()
-    axes[0, 1].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-    axes[0, 1].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-    axes[0, 1].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-    for i in range(state_nump.shape[0]): 
-        for j in range(state_nump.shape[1]):  axes[0, 1].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-    axes[0, 1].set_title("State")
+    for neuron_to_plot in range(num_neurons):
+        axs[neuron_to_plot].plot(history_of_voltage_[:, neuron_to_plot], label=f'Neuron {1}', c='b')
+        axs[neuron_to_plot].plot(history_of_voltage_threshold_[:, neuron_to_plot], label=f'threshold {1}', c='g')
 
-    # plot the threshold
-    state_nump = threshold.numpy()
-    axes[1, 0].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-    axes[1, 0].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-    axes[1, 0].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-    for i in range(state_nump.shape[0]): 
-        for j in range(state_nump.shape[1]):  axes[1, 0].text(j, i, f'{state_nump[i, j]:.2f}', color='red', ha='center', va='center')
-    axes[1, 0].set_title("Threshold")
+        spike_time = [i for i, x in enumerate(history_of_random_spikes_[:, neuron_to_plot]) if x >= 1]            # plot the input spikes (random spikes)
+        spike_numbers = history_of_random_spikes_[:, neuron_to_plot][spike_time]
 
-    # plot the weights
-    for p, name in enumerate(["right", "left", "up", "down"]):
-        state_nump = connections_and_strength[p].numpy()
-        axes[2, p].set_xticks(ticks=range(state_nump.shape[1]), labels=range(state_nump.shape[1]))    # Remove axis ticks
-        axes[2, p].set_yticks(ticks=range(state_nump.shape[0]), labels=range(state_nump.shape[0]))
-        axes[2, p].imshow(state_nump, cmap='gray', aspect='equal', vmin=0, vmax=1)
-        for i in range(state_nump.shape[0]): 
-            for j in range(state_nump.shape[1]):  axes[2, p].text(j, i, f'{state_nump[i, j]:.1f}', color='red', ha='center', va='center')
-        axes[2, p].set_title(name)
+        axs[neuron_to_plot].vlines(x=spike_time, ymin=0, ymax=max(history_of_voltage_threshold_[:, neuron_to_plot]), color='r', linestyles='dashed')
+        for i in range(len(spike_numbers)):  # add the number of spikes as a letter above the spike
+            axs[neuron_to_plot].text(spike_time[i], max(history_of_voltage_threshold_[:, neuron_to_plot]), str(spike_numbers[i]), fontsize=12, color='r')
 
-    # Hide the unused subplots
-    axes[0, 2].axis('off')  # Turn off the 3rd subplot
-    axes[0, 3].axis('off')  # Turn off the 3rd subplot
-    axes[1, 1].axis('off')  # Turn off the 4th subplot
-    axes[1, 2].axis('off')  # Turn off the 4th subplot
-    axes[1, 3].axis('off')  # Turn off the 4th subplot
+        axs[neuron_to_plot].set_ylabel('voltage')
+        # axs[neuron_to_plot].set_xlabel('Time (ms)')
+        axs[neuron_to_plot].set_title(f'Neuron {neuron_to_plot}')
+        if neuron_to_plot == 0:
+            axs[neuron_to_plot].legend()
+    
     plt.tight_layout()
-    plt.pause(0.000001)
+    plt.show()
+    plt.pause(0.0001)
 
+def plot_simple(v, num_neurons, vt):
+    plt.clf()
+    plt.subplot(2, 1, 1)
 
+    plt.title('voltage')
+    plt.imshow(v.view(1, -1), cmap='gray', aspect='equal')
+    for i in range(num_neurons):        # place the value of the neurons voltage over the image
+        plt.text(i, 0, '{:.2f}   '.format(v[i].item()), color='red', ha='center', va='center')
 
+    plt.xticks(np.arange(-0.5, num_neurons, step=1))        # set the ticks but shift them to be ever .5 value not 1.0 value
+    plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)        # set tick values to dissapear
+    plt.grid(axis='x')        # add the grid to only the horizontal axis
 
+    plt.subplot(2, 1, 2)
+    plt.title('voltage threshold')
+    plt.imshow(vt.view(1, -1), cmap='gray', aspect='equal')
+    for i in range(num_neurons):        # place the value of the neurons voltage over the image
+        plt.text(i, 0, '{:.2f}   '.format(vt[i].item()), color='red', ha='center', va='center')
+    plt.xticks(np.arange(-0.5, num_neurons, step=1))        # set the ticks but shift them to be ever .5 value not 1.0 value
+    plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)        # set tick values to dissapear
+    plt.grid(axis='x')        # add the grid to only the horizontal axis
 
-    # def learn_step(self, input, target):
-    #     # we want to implement:
-    #     # 1. STDP: Spike-timing-dependent plasticity.
-    #     # 2. Homeostasis: Keep the average firing rate of the neurons at a certain level.
-    #     # 3. Inhibition: Inhibit neurons that are too active.
-    #     # 4. Spontaneous firing: Add a small probability of spontaneous firing.
-    #     # 5. Learning from input-target error.
-    #     # 6. Learning from world model prediction error. 
-
-    #     # hebbian learning:
-    #     pass
-
-
-
-        # self.state = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.8],
-        #                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float16)
-        # self.threshold = torch.tensor([[0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-        #                                [1.0, 0.5, 0.3, 0.3, 0.3, 0.3],  # minumum threshold is 1.0!!! this ensures the sumultanious pulsing works!
-        #                                [1.0, 1.0, 1.0, 0.3, 1.0, 0.3],
-        #                                [1.0, 1.0, 1.0, 0.3, 0.3, 0.3]], dtype=torch.float16)
-        # self.connections_and_strength = [torch.tensor([[0.6, 0.6, 0.6, 0.6, 0.6, 0.6],
-        #                                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],# right # existance = connection, value = weight 
-        #                                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                                                [0.0, 0.0, 0.0, 0.4, 0.4, 0.0]], dtype=torch.float16),
-        #                             torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                                           [0.1, 0.1, 0.1, 0.4, 0.4, 0.4],# left
-        #                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float16),
-        #                             torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],# up
-        #                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.4],
-        #                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.4]], dtype=torch.float16),
-        #                             torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        #                                           [0.0, 0.0, 0.0, 0.4, 0.0, 0.0],# down
-        #                                           [0.0, 0.0, 0.0, 0.4, 0.0, 0.0],
-        #                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=torch.float16),]
+    plt.show()
+    plt.pause(0.0001)
