@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def plot_detailed(history_of_spikes, history_of_voltage, history_of_random_spikes, history_of_voltage_threshold, axs, num_neurons):
+def plot_detailed(history_of_spikes, history_of_voltage, history_of_random_spikes, history_of_voltage_threshold, fig, axs, fig2, axs2, num_neurons, weights):
     # plt in a subplot for each of the neurons as a graph of its state for the last 100 timesteps
 
     for i in range(len(axs)):
@@ -29,9 +29,20 @@ def plot_detailed(history_of_spikes, history_of_voltage, history_of_random_spike
         if neuron_to_plot == 0:
             axs[neuron_to_plot].legend()
     
-    plt.tight_layout()
+    fig.tight_layout()
+
+
+    # plot the weights in the last subplot
+    axs2.imshow(weights, cmap='gray', aspect='equal')
+    # place the value of the neurons voltage over the image
+    for i in range(num_neurons):
+        for j in range(num_neurons):
+            axs2.text(j, i, '{:.2f}'.format(weights[i, j].item()), color='red', ha='center', va='center')
+    fig2.tight_layout()
+    
     plt.show()
     plt.pause(0.0001)
+
 
 def plot_simple(v, num_neurons, vt):
     plt.clf()

@@ -11,16 +11,15 @@ from utils import plot_detailed
 class spiking_network:
     def __init__(self, size):
         self.num_neurons = size
-        # self.weight_scale = 0.1
 
-        self.w = torch.ones(self.num_neurons) * 0.5   # 
-        # self.W = torch.randn(self.num_neurons, self.num_neurons) * weight_scale
-        self.v = torch.ones(self.num_neurons) * 0.5
-
+        density = 0.9  # 10% of the connections are non-zero
+        self.W      = (torch.rand(self.num_neurons, self.num_neurons) < density).float() * torch.randn(self.num_neurons, self.num_neurons)
+        self.W.fill_diagonal_(0)  # remove self-connections
+        self.v      = torch.ones(self.num_neurons) * 0.5
         self.vt     = torch.ones(self.num_neurons)
         self.vt_min = torch.ones(self.num_neurons)
 
-        self.spikes = torch.zeros(self.num_neurons, dtype=torch.int)
+        self.spikes = torch.zeros(self.num_neurons, dtype=torch.float32)
 
         self.dt = 1.0  # time step
 
@@ -41,11 +40,8 @@ class spiking_network:
     def forward(self):
         self.spikes += self.spontaneous_spike()  # get the random spikes
 
-        # calculate the synaptic input from other neurons
-        # self.v += torch.matmul(self.W, self.spikes.float())
-
         # update the membrane potential
-        self.v += (self.w * self.spikes)
+        self.v += torch.matmul(self.W, self.spikes)
         self.v -= (self.v / self.voltage_decay_rate) * self.dt  # decay the membrane potential
 
         # threshold decay
@@ -57,10 +53,16 @@ class spiking_network:
         self.vt[spiking_neurons] += 0.1       # increase decaying threshold linearly
         self.v[spiking_neurons] = 0.0         # reset the membrane potential
         self.v = torch.clamp(self.v, min=0.0) # clip the membrane potential
+    
+        # store the spikes
+        self.spikes = spiking_neurons.float()
 
         # Store history and plot
         self.store_history(spiking_neurons)
-        plot_detailed(self.history_of_spikes, self.history_of_voltage, self.history_of_random_spikes, self.history_of_voltage_threshold, self.axs, self.num_neurons)
+        plot_detailed(self.history_of_spikes, self.history_of_voltage, self.history_of_random_spikes, self.history_of_voltage_threshold, self.fig, self.axs, self.fig2, self.axs2, self.num_neurons, self.W)
+
+        # reset the spikes
+        self.spikes.zero_()
 
         return spiking_neurons
 
@@ -73,6 +75,8 @@ class spiking_network:
         nrows = (self.num_neurons + 2) // ncols
         self.fig, self.axs = plt.subplots(nrows, ncols, figsize=(10, 5))
         self.axs = self.axs.flatten()
+
+        self.fig2, self.axs2 = plt.subplots(nrows=1, ncols=1, figsize=(10, 5))
 
     def store_history(self, spiking_neurons):
         self.history_of_random_spikes.append(self.spikes.clone())
@@ -92,7 +96,7 @@ spike_network = spiking_network(size=num_neurons)
 # run the simulation
 for timestep in range(100):
     spiking_neurons = spike_network.forward()    # forward pass
-    time.sleep(0.2)
+    time.sleep(0.002)
 
 plt.ioff()
 plt.show()
